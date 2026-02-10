@@ -1,0 +1,927 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ERA5 Climate Grid - AR Visualization</title>
+    <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
+    <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Crimson+Pro:wght@300;600&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --primary: #1a1a2e;
+            --accent: #ff6b35;
+            --secondary: #16213e;
+            --text: #eee;
+            --bg-dark: #0f0f1e;
+            --confidence-low: #ff4444;
+            --confidence-med: #ffaa00;
+            --confidence-high: #00ff88;
+        }
+
+        body {
+            font-family: 'Space Mono', monospace;
+            background: var(--bg-dark);
+            color: var(--text);
+            overflow: hidden;
+        }
+
+        /* AR Scene fills screen */
+        #ar-scene {
+            width: 100vw;
+            height: 100vh;
+        }
+
+        /* Desktop Preview Mode */
+        #preview-mode {
+            display: none;
+            width: 100vw;
+            height: 100vh;
+            background: linear-gradient(135deg, #0f0f1e 0%, #1a1a2e 100%);
+            position: relative;
+            overflow: hidden;
+        }
+
+        #preview-mode.active {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+        }
+
+        .preview-container {
+            width: 80%;
+            max-width: 800px;
+            height: 500px;
+            background: #16213e;
+            border-radius: 20px;
+            border: 2px solid var(--accent);
+            position: relative;
+            overflow: hidden;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+        }
+
+        .preview-map {
+            width: 100%;
+            height: 100%;
+            position: relative;
+            background: linear-gradient(to bottom, #2a3f5f 0%, #1a2f4f 100%);
+        }
+
+        .weather-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            opacity: 0;
+            transition: opacity 0.5s ease;
+            pointer-events: none;
+        }
+
+        .weather-overlay.active {
+            opacity: 0.7;
+        }
+
+        .heat-layer {
+            background: radial-gradient(ellipse at 30% 30%, rgba(255, 50, 50, 0.8) 0%, transparent 50%),
+                        radial-gradient(ellipse at 70% 60%, rgba(255, 150, 0, 0.6) 0%, transparent 50%),
+                        radial-gradient(ellipse at 50% 80%, rgba(255, 200, 100, 0.5) 0%, transparent 50%);
+            animation: heatPulse 4s ease-in-out infinite;
+        }
+
+        @keyframes heatPulse {
+            0%, 100% { filter: brightness(1); }
+            50% { filter: brightness(1.2); }
+        }
+
+        .precipitation-layer {
+            background: 
+                radial-gradient(circle at 20% 40%, rgba(100, 150, 255, 0.7) 0%, transparent 30%),
+                radial-gradient(circle at 60% 20%, rgba(80, 130, 255, 0.5) 0%, transparent 35%),
+                radial-gradient(circle at 80% 70%, rgba(120, 170, 255, 0.6) 0%, transparent 25%);
+            animation: rainFlow 3s ease-in-out infinite;
+        }
+
+        @keyframes rainFlow {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-10px); }
+        }
+
+        .wind-layer {
+            background: none;
+            overflow: hidden;
+        }
+
+        .wind-line {
+            position: absolute;
+            height: 2px;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.6), transparent);
+            animation: windFlow 3s linear infinite;
+        }
+
+        @keyframes windFlow {
+            0% { transform: translateX(-100%); opacity: 0; }
+            10% { opacity: 1; }
+            90% { opacity: 1; }
+            100% { transform: translateX(200%); opacity: 0; }
+        }
+
+        /* UI Overlay */
+        .ui-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            pointer-events: none;
+            z-index: 1000;
+        }
+
+        .ui-overlay > * {
+            pointer-events: auto;
+        }
+
+        /* Header */
+        .header {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            right: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .logo {
+            font-family: 'Crimson Pro', serif;
+            font-size: 24px;
+            font-weight: 600;
+            color: var(--accent);
+            text-shadow: 0 2px 10px rgba(255, 107, 53, 0.5);
+        }
+
+        .mode-toggle {
+            background: rgba(26, 26, 46, 0.9);
+            border: 1px solid var(--accent);
+            color: var(--text);
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-family: 'Space Mono', monospace;
+            font-size: 12px;
+            cursor: pointer;
+            backdrop-filter: blur(10px);
+            transition: all 0.3s ease;
+        }
+
+        .mode-toggle:hover {
+            background: var(--accent);
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(255, 107, 53, 0.4);
+        }
+
+        /* Sidebar */
+        .sidebar {
+            position: absolute;
+            right: 0;
+            top: 0;
+            height: 100vh;
+            width: 350px;
+            background: rgba(15, 15, 30, 0.95);
+            border-left: 2px solid var(--accent);
+            transform: translateX(100%);
+            transition: transform 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+            overflow-y: auto;
+            backdrop-filter: blur(20px);
+            box-shadow: -10px 0 40px rgba(0, 0, 0, 0.5);
+        }
+
+        .sidebar.open {
+            transform: translateX(0);
+        }
+
+        .sidebar-toggle {
+            position: absolute;
+            left: -50px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: var(--accent);
+            border: none;
+            width: 50px;
+            height: 50px;
+            border-radius: 8px 0 0 8px;
+            cursor: pointer;
+            font-size: 24px;
+            color: white;
+            transition: all 0.3s ease;
+            box-shadow: -5px 0 20px rgba(255, 107, 53, 0.3);
+        }
+
+        .sidebar-toggle:hover {
+            background: #ff8555;
+            transform: translateY(-50%) translateX(-5px);
+        }
+
+        .sidebar-content {
+            padding: 30px 25px;
+        }
+
+        .section {
+            margin-bottom: 35px;
+        }
+
+        .section-title {
+            font-family: 'Crimson Pro', serif;
+            font-size: 18px;
+            font-weight: 600;
+            color: var(--accent);
+            margin-bottom: 15px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+
+        /* Timeline Slider */
+        .timeline-container {
+            position: relative;
+            padding: 10px 0;
+        }
+
+        .year-display {
+            text-align: center;
+            font-size: 36px;
+            font-weight: 700;
+            color: var(--accent);
+            margin-bottom: 15px;
+            text-shadow: 0 0 20px rgba(255, 107, 53, 0.5);
+            font-family: 'Crimson Pro', serif;
+        }
+
+        .timeline-slider {
+            width: 100%;
+            height: 6px;
+            border-radius: 3px;
+            background: linear-gradient(90deg, 
+                var(--confidence-low) 0%, 
+                var(--confidence-med) 50%, 
+                var(--confidence-high) 100%);
+            outline: none;
+            -webkit-appearance: none;
+            margin: 10px 0;
+        }
+
+        .timeline-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: white;
+            cursor: pointer;
+            border: 3px solid var(--accent);
+            box-shadow: 0 0 15px rgba(255, 107, 53, 0.8);
+            transition: all 0.2s ease;
+        }
+
+        .timeline-slider::-webkit-slider-thumb:hover {
+            transform: scale(1.2);
+        }
+
+        .timeline-labels {
+            display: flex;
+            justify-content: space-between;
+            font-size: 11px;
+            color: #888;
+            margin-top: 5px;
+        }
+
+        /* Toggle Switch */
+        .toggle-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .toggle-label {
+            font-size: 14px;
+            color: var(--text);
+        }
+
+        .toggle-switch {
+            position: relative;
+            width: 50px;
+            height: 26px;
+            background: #333;
+            border-radius: 13px;
+            cursor: pointer;
+            transition: background 0.3s ease;
+        }
+
+        .toggle-switch.active {
+            background: var(--accent);
+        }
+
+        .toggle-switch::after {
+            content: '';
+            position: absolute;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: white;
+            top: 3px;
+            left: 3px;
+            transition: transform 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+        }
+
+        .toggle-switch.active::after {
+            transform: translateX(24px);
+        }
+
+        /* Metrics Display */
+        .metrics {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+        }
+
+        .metric-card {
+            background: rgba(255, 107, 53, 0.1);
+            border: 1px solid var(--accent);
+            border-radius: 12px;
+            padding: 15px;
+            text-align: center;
+        }
+
+        .metric-value {
+            font-size: 28px;
+            font-weight: 700;
+            color: var(--accent);
+            margin-bottom: 5px;
+        }
+
+        .metric-label {
+            font-size: 11px;
+            color: #aaa;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        /* Confidence Meter */
+        .confidence-meter {
+            width: 100%;
+            height: 30px;
+            background: #1a1a2e;
+            border-radius: 15px;
+            overflow: hidden;
+            border: 2px solid var(--accent);
+            position: relative;
+        }
+
+        .confidence-fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--confidence-low), var(--confidence-med), var(--confidence-high));
+            transition: width 0.5s ease;
+            position: relative;
+        }
+
+        .confidence-fill::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
+            animation: shimmer 2s infinite;
+        }
+
+        @keyframes shimmer {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(100%); }
+        }
+
+        .confidence-label {
+            text-align: center;
+            margin-top: 8px;
+            font-size: 12px;
+            color: #aaa;
+        }
+
+        /* Instructions overlay */
+        .instructions {
+            position: absolute;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(15, 15, 30, 0.9);
+            padding: 20px 30px;
+            border-radius: 15px;
+            border: 2px solid var(--accent);
+            max-width: 500px;
+            text-align: center;
+            backdrop-filter: blur(20px);
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+            animation: fadeInUp 0.6s ease;
+        }
+
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateX(-50%) translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(-50%) translateY(0);
+            }
+        }
+
+        .instructions.hidden {
+            display: none;
+        }
+
+        .instructions h3 {
+            font-family: 'Crimson Pro', serif;
+            color: var(--accent);
+            margin-bottom: 10px;
+            font-size: 20px;
+        }
+
+        .instructions p {
+            font-size: 13px;
+            line-height: 1.6;
+            color: #ccc;
+        }
+
+        .close-instructions {
+            background: var(--accent);
+            border: none;
+            color: white;
+            padding: 8px 20px;
+            border-radius: 8px;
+            margin-top: 15px;
+            cursor: pointer;
+            font-family: 'Space Mono', monospace;
+            font-size: 12px;
+            transition: all 0.3s ease;
+        }
+
+        .close-instructions:hover {
+            transform: scale(1.05);
+            box-shadow: 0 5px 20px rgba(255, 107, 53, 0.4);
+        }
+
+        /* Loading state */
+        .loading {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: var(--bg-dark);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+            z-index: 9999;
+            transition: opacity 0.5s ease;
+        }
+
+        .loading.hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .spinner {
+            width: 60px;
+            height: 60px;
+            border: 4px solid rgba(255, 107, 53, 0.2);
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .loading-text {
+            margin-top: 20px;
+            font-size: 14px;
+            color: var(--accent);
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .sidebar {
+                width: 100%;
+            }
+            
+            .sidebar-toggle {
+                left: auto;
+                right: 20px;
+                top: auto;
+                bottom: 20px;
+                border-radius: 50%;
+                transform: none;
+            }
+
+            .sidebar-toggle:hover {
+                transform: scale(1.1);
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Loading Screen -->
+    <div class="loading" id="loading">
+        <div class="spinner"></div>
+        <div class="loading-text">Initializing AR Climate Grid...</div>
+    </div>
+
+    <!-- AR Scene -->
+    <a-scene 
+        id="ar-scene"
+        embedded 
+        arjs="sourceType: webcam; debugUIEnabled: false; detectionMode: mono_and_matrix; matrixCodeType: 3x3;"
+        vr-mode-ui="enabled: false"
+        renderer="logarithmicDepthBuffer: true; precision: medium;">
+        
+        <!-- Camera -->
+        <a-entity camera></a-entity>
+
+        <!-- AR Marker - Checkered Pattern -->
+        <a-marker preset="hiro" id="marker">
+            <!-- Northeast USA simplified terrain -->
+            <a-entity id="terrain-model">
+                <!-- Base platform -->
+                <a-box 
+                    position="0 -0.5 0" 
+                    width="3" 
+                    depth="4" 
+                    height="0.1" 
+                    color="#2a3f5f"
+                    shadow>
+                </a-box>
+
+                <!-- Simplified terrain bumps for major regions -->
+                <!-- Appalachian Mountains -->
+                <a-cylinder 
+                    position="-0.5 0 0.5" 
+                    radius="0.4" 
+                    height="0.3" 
+                    color="#3a5f7f">
+                </a-cylinder>
+
+                <!-- Coastal plains -->
+                <a-box 
+                    position="0.8 -0.1 -1" 
+                    width="1" 
+                    depth="1.5" 
+                    height="0.05" 
+                    color="#2a4f6f">
+                </a-box>
+
+                <!-- Heat overlay -->
+                <a-plane 
+                    id="heat-overlay"
+                    position="0 0.2 0" 
+                    width="3" 
+                    height="4" 
+                    rotation="-90 0 0" 
+                    material="transparent: true; opacity: 0; color: #ff6b35"
+                    visible="false">
+                </a-plane>
+
+                <!-- Precipitation overlay -->
+                <a-plane 
+                    id="precip-overlay"
+                    position="0 0.3 0" 
+                    width="3" 
+                    height="4" 
+                    rotation="-90 0 0" 
+                    material="transparent: true; opacity: 0; color: #5599ff"
+                    visible="false">
+                </a-plane>
+
+                <!-- Wind particles placeholder -->
+                <a-entity id="wind-overlay" visible="false">
+                    <a-box position="0.5 0.5 0" width="0.02" height="0.02" depth="1" color="#ffffff" opacity="0.5"></a-box>
+                    <a-box position="-0.5 0.6 0.5" width="0.02" height="0.02" depth="1.2" color="#ffffff" opacity="0.4"></a-box>
+                    <a-box position="0 0.4 -0.5" width="0.02" height="0.02" depth="0.8" color="#ffffff" opacity="0.6"></a-box>
+                </a-entity>
+
+                <!-- Grid overlay to represent ERA5 100km cells -->
+                <a-entity id="era5-grid">
+                    <!-- Grid lines -->
+                </a-entity>
+            </a-entity>
+        </a-marker>
+    </a-scene>
+
+    <!-- Desktop Preview Mode -->
+    <div id="preview-mode" class="active">
+        <div class="preview-container">
+            <div class="preview-map">
+                <div class="weather-overlay heat-layer" id="preview-heat"></div>
+                <div class="weather-overlay precipitation-layer" id="preview-precip"></div>
+                <div class="weather-overlay wind-layer" id="preview-wind"></div>
+            </div>
+        </div>
+        <p style="margin-top: 20px; color: #888; font-size: 13px;">Desktop Preview Mode - Switch to AR mode to use with printed marker</p>
+    </div>
+
+    <!-- UI Overlay -->
+    <div class="ui-overlay">
+        <!-- Header -->
+        <div class="header">
+            <div class="logo">ERA5 Climate Grid</div>
+            <button class="mode-toggle" id="mode-toggle">Switch to AR Mode</button>
+        </div>
+
+        <!-- Sidebar -->
+        <div class="sidebar" id="sidebar">
+            <button class="sidebar-toggle" id="sidebar-toggle">⚙</button>
+            
+            <div class="sidebar-content">
+                <!-- Timeline Section -->
+                <div class="section">
+                    <div class="section-title">Timeline</div>
+                    <div class="timeline-container">
+                        <div class="year-display" id="year-display">2025</div>
+                        <input 
+                            type="range" 
+                            class="timeline-slider" 
+                            id="timeline-slider"
+                            min="1940" 
+                            max="2025" 
+                            value="2025"
+                            step="1">
+                        <div class="timeline-labels">
+                            <span>1940</span>
+                            <span>1980</span>
+                            <span>2025</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Weather Layers -->
+                <div class="section">
+                    <div class="section-title">Weather Layers</div>
+                    <div class="toggle-item">
+                        <span class="toggle-label">Heat Index</span>
+                        <div class="toggle-switch" data-layer="heat"></div>
+                    </div>
+                    <div class="toggle-item">
+                        <span class="toggle-label">Precipitation</span>
+                        <div class="toggle-switch" data-layer="precipitation"></div>
+                    </div>
+                    <div class="toggle-item">
+                        <span class="toggle-label">Wind Patterns</span>
+                        <div class="toggle-switch" data-layer="wind"></div>
+                    </div>
+                </div>
+
+                <!-- Confidence Meter -->
+                <div class="section">
+                    <div class="section-title">ERA5 Confidence</div>
+                    <div class="confidence-meter">
+                        <div class="confidence-fill" id="confidence-fill" style="width: 95%"></div>
+                    </div>
+                    <div class="confidence-label" id="confidence-text">High Confidence (95%)</div>
+                </div>
+
+                <!-- Metrics -->
+                <div class="section">
+                    <div class="section-title">Data Metrics</div>
+                    <div class="metrics">
+                        <div class="metric-card">
+                            <div class="metric-value" id="station-count">12,847</div>
+                            <div class="metric-label">Weather Stations</div>
+                        </div>
+                        <div class="metric-card">
+                            <div class="metric-value" id="grid-cells">2,592</div>
+                            <div class="metric-label">Grid Cells (100km²)</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Additional Toggles -->
+                <div class="section">
+                    <div class="section-title">View Options</div>
+                    <div class="toggle-item">
+                        <span class="toggle-label">Google Maps Overlay</span>
+                        <div class="toggle-switch" data-layer="maps"></div>
+                    </div>
+                    <div class="toggle-item">
+                        <span class="toggle-label">ERA5 Grid</span>
+                        <div class="toggle-switch active" data-layer="grid"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Instructions -->
+        <div class="instructions" id="instructions">
+            <h3>Welcome to ERA5 Climate Visualization</h3>
+            <p>
+                This AR experience displays historical weather data using the ERA5 climate algorithm. 
+                Toggle different weather layers, adjust the timeline from 1940 to today, and explore 
+                how data confidence has improved with increased weather station coverage.
+            </p>
+            <p style="margin-top: 10px;">
+                <strong>Desktop Mode:</strong> Use the controls to preview.<br>
+                <strong>AR Mode:</strong> Point your camera at the printed checkered marker.
+            </p>
+            <button class="close-instructions" id="close-instructions">Got it!</button>
+        </div>
+    </div>
+
+    <script>
+        // State management
+        const state = {
+            arMode: false,
+            year: 2025,
+            layers: {
+                heat: false,
+                precipitation: false,
+                wind: false,
+                maps: false,
+                grid: true
+            },
+            confidence: 95,
+            stationCount: 12847
+        };
+
+        // DOM elements
+        const loading = document.getElementById('loading');
+        const arScene = document.getElementById('ar-scene');
+        const previewMode = document.getElementById('preview-mode');
+        const modeToggle = document.getElementById('mode-toggle');
+        const sidebar = document.getElementById('sidebar');
+        const sidebarToggle = document.getElementById('sidebar-toggle');
+        const timelineSlider = document.getElementById('timeline-slider');
+        const yearDisplay = document.getElementById('year-display');
+        const confidenceFill = document.getElementById('confidence-fill');
+        const confidenceText = document.getElementById('confidence-text');
+        const stationCountEl = document.getElementById('station-count');
+        const instructions = document.getElementById('instructions');
+        const closeInstructions = document.getElementById('close-instructions');
+
+        // Initialize
+        window.addEventListener('load', () => {
+            setTimeout(() => {
+                loading.classList.add('hidden');
+            }, 1500);
+
+            // Generate wind lines for preview
+            generateWindLines();
+        });
+
+        // Mode toggle
+        modeToggle.addEventListener('click', () => {
+            state.arMode = !state.arMode;
+            if (state.arMode) {
+                previewMode.classList.remove('active');
+                arScene.style.display = 'block';
+                modeToggle.textContent = 'Switch to Preview Mode';
+            } else {
+                previewMode.classList.add('active');
+                arScene.style.display = 'none';
+                modeToggle.textContent = 'Switch to AR Mode';
+            }
+        });
+
+        // Sidebar toggle
+        sidebarToggle.addEventListener('click', () => {
+            sidebar.classList.toggle('open');
+        });
+
+        // Timeline slider
+        timelineSlider.addEventListener('input', (e) => {
+            state.year = parseInt(e.target.value);
+            yearDisplay.textContent = state.year;
+            updateConfidence();
+            updateStationCount();
+        });
+
+        // Layer toggles
+        document.querySelectorAll('.toggle-switch').forEach(toggle => {
+            toggle.addEventListener('click', () => {
+                const layer = toggle.dataset.layer;
+                if (!layer) return;
+
+                toggle.classList.toggle('active');
+                state.layers[layer] = toggle.classList.contains('active');
+                updateLayers();
+            });
+        });
+
+        // Update confidence based on year
+        function updateConfidence() {
+            // Simulate confidence degradation going back in time
+            // More stations = higher confidence
+            let confidence;
+            if (state.year >= 2000) {
+                confidence = 90 + (state.year - 2000) / 25 * 10; // 90-100%
+            } else if (state.year >= 1980) {
+                confidence = 70 + (state.year - 1980) / 20 * 20; // 70-90%
+            } else if (state.year >= 1960) {
+                confidence = 50 + (state.year - 1960) / 20 * 20; // 50-70%
+            } else {
+                confidence = 30 + (state.year - 1940) / 20 * 20; // 30-50%
+            }
+
+            state.confidence = Math.round(confidence);
+            confidenceFill.style.width = confidence + '%';
+            
+            let confidenceLevel;
+            if (confidence >= 80) confidenceLevel = 'High';
+            else if (confidence >= 60) confidenceLevel = 'Medium';
+            else confidenceLevel = 'Low';
+
+            confidenceText.textContent = `${confidenceLevel} Confidence (${state.confidence}%)`;
+        }
+
+        // Update station count based on year
+        function updateStationCount() {
+            // Simulate growth of weather station network
+            let stations;
+            if (state.year >= 2000) {
+                stations = 8000 + (state.year - 2000) * 193; // ~12,847 by 2025
+            } else if (state.year >= 1980) {
+                stations = 4000 + (state.year - 1980) * 200; // 4,000-8,000
+            } else if (state.year >= 1960) {
+                stations = 2000 + (state.year - 1960) * 100; // 2,000-4,000
+            } else {
+                stations = 500 + (state.year - 1940) * 75; // 500-2,000
+            }
+
+            state.stationCount = Math.round(stations);
+            stationCountEl.textContent = state.stationCount.toLocaleString();
+        }
+
+        // Update layer visibility
+        function updateLayers() {
+            // Preview mode
+            document.getElementById('preview-heat').classList.toggle('active', state.layers.heat);
+            document.getElementById('preview-precip').classList.toggle('active', state.layers.precipitation);
+            document.getElementById('preview-wind').classList.toggle('active', state.layers.wind);
+
+            // AR mode
+            if (state.arMode) {
+                const heatOverlay = document.getElementById('heat-overlay');
+                const precipOverlay = document.getElementById('precip-overlay');
+                const windOverlay = document.getElementById('wind-overlay');
+
+                if (heatOverlay) {
+                    heatOverlay.setAttribute('visible', state.layers.heat);
+                    if (state.layers.heat) {
+                        heatOverlay.setAttribute('material', 'opacity', '0.6');
+                    }
+                }
+
+                if (precipOverlay) {
+                    precipOverlay.setAttribute('visible', state.layers.precipitation);
+                    if (state.layers.precipitation) {
+                        precipOverlay.setAttribute('material', 'opacity', '0.5');
+                    }
+                }
+
+                if (windOverlay) {
+                    windOverlay.setAttribute('visible', state.layers.wind);
+                }
+            }
+        }
+
+        // Generate wind lines for preview
+        function generateWindLines() {
+            const windLayer = document.getElementById('preview-wind');
+            for (let i = 0; i < 12; i++) {
+                const line = document.createElement('div');
+                line.className = 'wind-line';
+                line.style.width = Math.random() * 150 + 100 + 'px';
+                line.style.top = Math.random() * 100 + '%';
+                line.style.left = Math.random() * 100 + '%';
+                line.style.animationDelay = Math.random() * 3 + 's';
+                line.style.animationDuration = Math.random() * 2 + 2 + 's';
+                windLayer.appendChild(line);
+            }
+        }
+
+        // Close instructions
+        closeInstructions.addEventListener('click', () => {
+            instructions.classList.add('hidden');
+        });
+
+        // Initialize confidence and station count
+        updateConfidence();
+        updateStationCount();
+    </script>
+</body>
+</html>

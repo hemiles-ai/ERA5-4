@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>AR Marker - Print This</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            font-family: Arial, sans-serif;
+        }
+        .instructions {
+            max-width: 600px;
+            margin-bottom: 20px;
+            padding: 20px;
+            background: #f0f0f0;
+            border-radius: 8px;
+        }
+        .marker-container {
+            width: 500px;
+            height: 500px;
+            border: 3px solid #000;
+            display: grid;
+            grid-template-columns: repeat(8, 1fr);
+            grid-template-rows: repeat(8, 1fr);
+            margin: 20px;
+        }
+        .cell {
+            background: #000;
+        }
+        .cell.white {
+            background: #fff;
+        }
+        @media print {
+            .instructions, .no-print {
+                display: none;
+            }
+            body {
+                padding: 0;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="instructions no-print">
+        <h2>🎯 AR Marker - Printing Instructions</h2>
+        <p><strong>What to do:</strong></p>
+        <ol>
+            <li>Print this page on regular white paper (8.5" x 11")</li>
+            <li>Cut out the checkered pattern square</li>
+            <li>Tape or glue it flat on the base of your 3D printed model (or place it beside the model)</li>
+            <li>Make sure it's flat and well-lit when using AR mode</li>
+        </ol>
+        <p><strong>Tips:</strong></p>
+        <ul>
+            <li>Print in black & white for best contrast</li>
+            <li>Keep the pattern flat and uncrumpled</li>
+            <li>Ensure good lighting when scanning</li>
+        </ul>
+        <button onclick="window.print()" style="padding: 10px 20px; font-size: 16px; cursor: pointer;">🖨️ Print This Marker</button>
+    </div>
+
+    <div class="marker-container" id="marker">
+        <!-- Checkered pattern will be generated here -->
+    </div>
+
+    <p class="no-print" style="color: #666; margin-top: 20px;">
+        Pattern size: 500px x 500px | For AR.js HIRO marker tracking
+    </p>
+
+    <script>
+        // Generate checkered pattern
+        const marker = document.getElementById('marker');
+        const pattern = [
+            [0,1,0,1,0,1,0,1],
+            [1,0,1,0,1,0,1,0],
+            [0,1,0,1,0,1,0,1],
+            [1,0,1,0,1,0,1,0],
+            [0,1,0,1,0,1,0,1],
+            [1,0,1,0,1,0,1,0],
+            [0,1,0,1,0,1,0,1],
+            [1,0,1,0,1,0,1,0]
+        ];
+
+        pattern.forEach(row => {
+            row.forEach(cell => {
+                const div = document.createElement('div');
+                div.className = cell ? 'cell white' : 'cell';
+                marker.appendChild(div);
+            });
+        });
+    </script>
+</body>
+</html>
